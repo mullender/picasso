@@ -20,9 +20,12 @@ import android.graphics.drawable.Drawable;
 import android.widget.ImageView;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.mockito.ArgumentCaptor;
 import org.robolectric.Robolectric;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.annotation.Config;
+
+import java.util.List;
 
 import static com.squareup.picasso.Picasso.LoadedFrom.MEMORY;
 import static com.squareup.picasso.Picasso.RequestTransformer.IDENTITY;
@@ -33,6 +36,7 @@ import static com.squareup.picasso.TestUtils.mockCallback;
 import static com.squareup.picasso.TestUtils.mockImageViewTarget;
 import static org.fest.assertions.api.Assertions.assertThat;
 import static org.mockito.Matchers.any;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyZeroInteractions;
@@ -91,7 +95,7 @@ public class ImageViewActionTest {
             callback, false);
     request.complete(bitmap, MEMORY);
     verify(target).setImageDrawable(any(PicassoDrawable.class));
-    verify(callback).onSuccess();
+    verify(callback).onSuccess(target);
   }
 
   @Test
@@ -104,7 +108,7 @@ public class ImageViewActionTest {
             callback, false);
     request.error();
     verify(target).setImageResource(RESOURCE_ID_1);
-    verify(callback).onError();
+    verify(callback).onError(target);
   }
 
   @Test
@@ -117,7 +121,7 @@ public class ImageViewActionTest {
             callback, false);
     request.error();
     verify(target).setImageResource(RESOURCE_ID_1);
-    verify(callback).onError();
+    verify(callback).onError(target);
   }
 
   @Test
@@ -131,7 +135,27 @@ public class ImageViewActionTest {
             callback, false);
     request.error();
     verify(target).setImageDrawable(errorDrawable);
-    verify(callback).onError();
+    verify(callback).onError(target);
+  }
+
+  @Test
+  public void invokesRightTargetAndCallbackErrorWithMultipleTargets() throws Exception {
+      ImageView target1 = mockImageViewTarget();
+      ImageView target2 = mockImageViewTarget();
+      Callback callback = mockCallback();
+      Picasso mock = mock(Picasso.class);
+      ImageViewAction request1 =
+              new ImageViewAction(mock, target1, null, false, false, -1, null, null, callback);
+      request1.error();
+      ImageViewAction request2 =
+              new ImageViewAction(mock, target2, null, false, false, -1, null, null, callback);
+      request1.error();
+      request2.error();
+      ArgumentCaptor<ImageView> argument = ArgumentCaptor.forClass(ImageView.class);
+      verify(callback, atLeastOnce()).onError(argument.capture());
+      List<ImageView> values = argument.getAllValues();
+      assertThat(values).contains(target1);
+      assertThat(values).contains(target2);
   }
 
   @Test
