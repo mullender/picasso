@@ -288,7 +288,7 @@ final class Utils {
       memoryClass = ActivityManagerHoneycomb.getLargeMemoryClass(am);
     }
     // Target ~15% of the available heap.
-    return 1024 * 1024 * memoryClass / 7;
+    return 1024 * 1024 * 3 ;//memoryClass / 7;
   }
 
   static boolean isAirplaneModeOn(Context context) {
