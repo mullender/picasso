@@ -18,13 +18,17 @@ package com.squareup.picasso;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Color;
+import android.graphics.drawable.Drawable;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
 import android.os.Process;
+import android.util.Log;
 import android.widget.ImageView;
 import android.widget.RemoteViews;
+import org.jetbrains.annotations.Nullable;
+
 import java.io.File;
 import java.lang.ref.ReferenceQueue;
 import java.util.ArrayList;
@@ -150,6 +154,7 @@ public class Picasso {
   final Context context;
   final Dispatcher dispatcher;
   final Cache cache;
+  @Nullable final BitmapPool bitmapPool;
   final Stats stats;
   final Map<Object, Action> targetToAction;
   final Map<ImageView, DeferredRequestCreator> targetToDeferredRequestCreator;
@@ -161,12 +166,13 @@ public class Picasso {
 
   boolean shutdown;
 
-  Picasso(Context context, Dispatcher dispatcher, Cache cache, Listener listener,
+  Picasso(Context context, Dispatcher dispatcher, Cache cache, BitmapPool bitmapPool, Listener listener,
       RequestTransformer requestTransformer, List<RequestHandler> extraRequestHandlers, Stats stats,
       Bitmap.Config defaultBitmapConfig, boolean indicatorsEnabled, boolean loggingEnabled) {
     this.context = context;
     this.dispatcher = dispatcher;
     this.cache = cache;
+    this.bitmapPool = bitmapPool;
     this.listener = listener;
     this.requestTransformer = requestTransformer;
     this.defaultBitmapConfig = defaultBitmapConfig;
@@ -385,6 +391,26 @@ public class Picasso {
       throw new IllegalArgumentException("file == null");
     }
     invalidate(Uri.fromFile(file));
+  }
+
+  /**
+   * Decreases the refcount of the bitmap that was loaded using {@link RequestCreator#into(ImageView)}
+   * This allows the bitmap to be reused by picasso
+   *
+   * @param target
+   */
+  public void recycle(@Nullable final ImageView target) {
+    if (target == null) {
+      return;
+    }
+    Drawable drawable = target.getDrawable();
+    if (drawable instanceof PicassoDrawable) {
+      if (bitmapPool != null) {
+        Bitmap bitmap = ((PicassoDrawable) drawable).getBitmap();
+        Log.d("picasso", "recycling picassodrawable");
+        bitmapPool.decrementRefCount(bitmap);
+      }
+    }
   }
 
   /**
@@ -708,6 +734,7 @@ public class Picasso {
     private Downloader downloader;
     private ExecutorService service;
     private Cache cache;
+    private BitmapPool bitmapPool;
     private Listener listener;
     private RequestTransformer transformer;
     private List<RequestHandler> requestHandlers;
@@ -773,6 +800,18 @@ public class Picasso {
         throw new IllegalStateException("Memory cache already set.");
       }
       this.cache = memoryCache;
+      return this;
+    }
+
+    /** Specify the bitmapPool used for the most reusing bitmaps */
+    public Builder bitmapPool(BitmapPool bitmapPool) {
+      if (bitmapPool == null) {
+        throw new IllegalArgumentException("Bitmap pool must not be null.");
+      }
+      if (this.bitmapPool != null) {
+        throw new IllegalStateException("Bitmap pool already set.");
+      }
+      this.bitmapPool = bitmapPool;
       return this;
     }
 
@@ -855,6 +894,12 @@ public class Picasso {
       if (cache == null) {
         cache = new LruCache(context);
       }
+      if (bitmapPool != null) {
+        if (!(cache instanceof BitmapPoolAware)) {
+          throw new IllegalArgumentException("Cache must implement BitmapPoolAware, when specifying both Cache and BitmapPool");
+        }
+        ((BitmapPoolAware) cache).setBitmapPool(bitmapPool);
+      }
       if (service == null) {
         service = new PicassoExecutorService();
       }
@@ -866,7 +911,7 @@ public class Picasso {
 
       Dispatcher dispatcher = new Dispatcher(context, service, HANDLER, downloader, cache, stats);
 
-      return new Picasso(context, dispatcher, cache, listener, transformer, requestHandlers, stats,
+      return new Picasso(context, dispatcher, cache, bitmapPool, listener, transformer, requestHandlers, stats,
           defaultBitmapConfig, indicatorsEnabled, loggingEnabled);
     }
   }
